@@ -1,0 +1,1072 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>애플 주가 고급 통계분석 대시보드 (Apple Stock Analytics)</title>
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- PapaParse for fast CSV parsing -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <style>
+    :root {
+      --bg-color: #0f172a;
+      --card-bg: #1e293b;
+      --card-border: #334155;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-hover: #0ea5e9;
+      --success: #10b981;
+      --danger: #f43f5e;
+      --warning: #f59e0b;
+      --purple: #a855f7;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    .header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--card-border);
+      margin-bottom: 24px;
+    }
+
+    .title-group h1 {
+      font-size: 1.8rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .title-group p {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      margin-top: 4px;
+    }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .btn {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      color: var(--text-main);
+      padding: 8px 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+
+    .btn:hover {
+      background: var(--card-border);
+      border-color: var(--accent);
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #0f172a;
+      font-weight: 600;
+      border: none;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-hover);
+    }
+
+    input[type="file"] {
+      display: none;
+    }
+
+    /* Summary Stats Grid */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+
+    .kpi-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      padding: 18px 20px;
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+    }
+
+    .kpi-title {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .kpi-value {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .kpi-sub {
+      font-size: 0.8rem;
+      color: var(--accent);
+    }
+
+    /* Charts Grid */
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(540px, 1fr));
+      gap: 24px;
+    }
+
+    @media (max-width: 600px) {
+      .dashboard-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .chart-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.25);
+    }
+
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 14px;
+    }
+
+    .chart-badge {
+      font-size: 0.75rem;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-weight: 600;
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--accent);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+    }
+
+    .chart-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .chart-desc {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+      line-height: 1.4;
+    }
+
+    .chart-container {
+      position: relative;
+      flex: 1;
+      min-height: 270px;
+      max-height: 320px;
+      width: 100%;
+    }
+
+    .metric-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      font-size: 0.85rem;
+    }
+
+    .metric-table th, .metric-table td {
+      padding: 8px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    .metric-table th {
+      color: var(--text-muted);
+      font-weight: 600;
+      background: rgba(0,0,0,0.15);
+    }
+
+    .status-banner {
+      background: rgba(56, 189, 248, 0.1);
+      border: 1px solid rgba(56, 189, 248, 0.2);
+      color: var(--accent);
+      padding: 10px 16px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-size: 0.9rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Header -->
+  <div class="header">
+    <div class="title-group">
+      <h1>🍎 AAPL 주가 10대 통계 분석 대시보드</h1>
+      <p>애플 주가.csv (2010.07 ~ 2020.07, 2,517 거래일) 심층 데이터 통계 및 시각화</p>
+    </div>
+    <div class="actions">
+      <input type="file" id="fileInput" accept=".csv">
+      <button class="btn" onclick="document.getElementById('fileInput').click()">📂 다른 CSV 불러오기</button>
+      <button class="btn btn-primary" onclick="loadDefaultCSV()">🔄 기본 데이터 재분석</button>
+    </div>
+  </div>
+
+  <div id="statusBanner" class="status-banner">
+    <span>⏳ 데이터를 불러오고 통계 연산을 수행하는 중입니다...</span>
+  </div>
+
+  <!-- KPI Cards -->
+  <div class="kpi-grid" id="kpiGrid">
+    <div class="kpi-card">
+      <span class="kpi-title">분석 기간 및 거래일수</span>
+      <span class="kpi-value" id="kpiDateRange">-</span>
+      <span class="kpi-sub" id="kpiTotalDays">- 거래일</span>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-title">최종 종가 / 누적 수익률</span>
+      <span class="kpi-value" id="kpiFinalPrice">-</span>
+      <span class="kpi-sub" id="kpiTotalReturn">-</span>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-title">연환산 변동성 (Annual Volatility)</span>
+      <span class="kpi-value" id="kpiVolatility">-</span>
+      <span class="kpi-sub">일간 표준편차 × √252</span>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-title">연환산 샤프 지수 (Rf=1.5%)</span>
+      <span class="kpi-value" id="kpiSharpe">-</span>
+      <span class="kpi-sub" id="kpiCAGR">CAGR: -</span>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-title">최대 낙폭 (Max Drawdown, MDD)</span>
+      <span class="kpi-value" id="kpiMDD" style="color: var(--danger);">-</span>
+      <span class="kpi-sub" id="kpiMDDPeriod">역대 최고점 대비 최대하락</span>
+    </div>
+  </div>
+
+  <!-- Charts & Analysis Grid (10 Statistical Methods) -->
+  <div class="dashboard-grid">
+
+    <!-- 1. 추세 및 이평선 시계열 (Trend & Moving Average Decomposition) -->
+    <div class="chart-card">
+      <div class="chart-header">
+        <div>
+          <span class="chart-badge">분석 1</span>
+          <h2 class="chart-title">시계열 추세 및 다중 이동평균선 (Moving Averages)</h2>
+          <p class="chart-desc">종가(Close)와 20일(단기), 60일(중기), 200일(장기 골든크로스) 이평선 추세 분석</p>
+        </div>
+      </div>
+      <div class="chart-container">
+        <canvas id="chartMA"></canvas>
+      </div>
+    </div>
+
+    <!-- 2. 일일 수익률 분포 및 왜도/첨도 (Return Distribution & Normality) -->
+    <div class="chart-card">
+      <div class="chart-header">
+        <div>
+          <span class="chart-badge">분석 2</span>
+          <h2 class="chart-title">수익률 정규성 히스토그램 & 기술통계치</h2>
+          <p class="chart-desc">일일 로그 수익률 분포, 정규분포 적합곡선(KDE/Bell curve), 왜도(Skew) 및 첨도(Kurtosis)</p>
+        </div>
+      </div>
+      <div class="chart-container">
+        <canvas id="chartHist"></canvas>
+      </div>
+    </div>
+
+    <!-- 3. 볼린저 밴드 및 변동성 폭 (Bollinger Bands Volatility) -->
+    <div class="chart-card">
+      <div class="chart-header">
+        <div>
+          <span class="chart-badge">분석 3</span>
+          <h2 class="chart-title">볼린저 밴드 변동성 구간 (20일 SMA ± 2σ)</h2>
+          <p class="chart-desc">모수적 95.4% 신뢰구간 밴드 및 주가의 상/하단 밴드 이탈 및 변동성 수축/확장</p>
+        </div>
+      </div>
+      <div class="chart-container">
+        <canvas id="chartBB"></canvas>
+      </div>
+    </div>
+
+    <!-- 4. 롤링 변동성 시계열 (Rolling Volatility Dynamics) -->
+    <div class="chart-card">
+      <div class="chart-header">
+        <div>
+          <span class="chart-badge">분석 4</span>
+          <h2 class="chart-title">30일 롤링 연환산 변동성 추이 (Rolling Volatility)</h2>
+          <p class="chart-desc">30영업일 윈도우 기준 연환산 변동성(%) 변화 및 시장 급변동 위험 구간 탐지</p>
+        </div>
+      </div>
+      <div class="chart-container">
+        <canvas id="chartRollingVol"></canvas>
+      </div>
+    </div>
+
+    <!-- 5. 모멘텀 지표 RSI (Relative Strength Index) -->
+    <div class="chart-card">
+      <div class="chart-header">
+        <div>
+          <span class="chart-badge">분석 5</span>
+          <h2 class="chart-title">14일 RSI 확률 모멘텀 & 과매수/과매도 분석</h2>
+          <p class="chart-desc">상승폭과 하락폭의 상대 강도 지수 (RSI > 70 과매수 경계, RSI < 30 과매도 반등 구간)</p>
+        </div>
+      </div>
+      <div class="chart-container">
+        <canvas id="chartRSI"></canvas>
+      </div>
+    </div>
+
+    <!-- 6. 리스크 관리: 낙폭 언더워터 곡선 (Drawdown / Underwater Curve) -->
+    <div class="chart-card">
+      <div class="chart-header">
+        <div>
+          <span class="chart-badge">분석 6</span>
+          <h2 class="chart-title">낙폭 언더워터 차트 (Drawdown & Max Drawdown)</h2>
+          <p class="chart-desc">역대 최고점(Peak) 대비 하락률(%)과 손실 회복 기간(Recovery Period) 리스크 분석</p>
+        </div>
+      </div>
+      <div class="chart-container">
+        <canvas id="chartDrawdown"></canvas>
+      </div>
+    </div>
+
+    <!-- 7. 거래량과 일일 수익률 상관관계 및 선형 회귀 (Volume vs Return Regression) -->
+    <div class="chart-card">
+      <div class="chart-header">
+        <div>
+          <span class="chart-badge">분석 7</span>
+          <h2 class="chart-title">거래량 vs 수익률 산점도 및 선형 회귀선 (OLS)</h2>
+          <p class="chart-desc">거래량 변화율과 주가 수익률 간의 선형 관계 모델링, 상관계수(r) 및 회귀계수(β)</p>
+        </div>
+      </div>
+      <div class="chart-container">
+        <canvas id="chartRegression"></canvas>
+      </div>
+    </div>
+
+    <!-- 8. 연도별 박스플롯 분포 분석 (Yearly Boxplot Quartiles) -->
+    <div class="chart-card">
+      <div class="chart-header">
+        <div>
+          <span class="chart-badge">분석 8</span>
+          <h2 class="chart-title">연도별 주가 5수치 요약 (Min, Q1, Median, Q3, Max)</h2>
+          <p class="chart-desc">2010년~2020년 각 연도별 주가 중심경향성 및 사분위 범위(IQR) 구조적 변화</p>
+        </div>
+      </div>
+      <div class="chart-container">
+        <canvas id="chartBoxplot"></canvas>
+      </div>
+    </div>
+
+    <!-- 9. 계절성 분석: 월별 평균 수익률 (Monthly Seasonality) -->
+    <div class="chart-card">
+      <div class="chart-header">
+        <div>
+          <span class="chart-badge">분석 9</span>
+          <h2 class="chart-title">월별(1월~12월) 평균 수익률 및 승률(Win-Rate) 계절성</h2>
+          <p class="chart-desc">10개년 동안 1월부터 12월까지의 월평균 주가 수익률(%) 및 양의 수익률 확률</p>
+        </div>
+      </div>
+      <div class="chart-container">
+        <canvas id="chartSeasonality"></canvas>
+      </div>
+    </div>
+
+    <!-- 10. 종합 리스크 & 성과 통계 요약표 (VaR, CVaR, Sharpe, CAGR) -->
+    <div class="chart-card">
+      <div class="chart-header">
+        <div>
+          <span class="chart-badge">분석 10</span>
+          <h2 class="chart-title">포괄적 금융공학 리스크 통계표 (VaR, CVaR, Sharpe 등)</h2>
+          <p class="chart-desc">모수적/역사적 Value at Risk(95%, 99%), 비대칭성 지표, 기대손실(CVaR) 정밀 측정치</p>
+        </div>
+      </div>
+      <div style="overflow-x: auto; flex: 1;">
+        <table class="metric-table" id="statSummaryTable">
+          <thead>
+            <tr>
+              <th>통계 지표 항목</th>
+              <th>산출값</th>
+              <th>지표 해석 및 의미</th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- Dynamic Insertion -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // Global chart instances
+    let charts = {};
+
+    function destroyAllCharts() {
+      Object.keys(charts).forEach(key => {
+        if (charts[key]) charts[key].destroy();
+      });
+      charts = {};
+    }
+
+    // Chart.js Default Dark Theme Styling
+    Chart.defaults.color = '#94a3b8';
+    Chart.defaults.borderColor = '#334155';
+
+    // File input handler
+    document.getElementById('fileInput').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (file) {
+        Papa.parse(file, {
+          header: true,
+          dynamicTyping: true,
+          skipEmptyLines: true,
+          complete: function(results) {
+            processStockData(results.data, file.name);
+          }
+        });
+      }
+    });
+
+    // Auto-load default CSV on start
+    window.addEventListener('DOMContentLoaded', () => {
+      loadDefaultCSV();
+    });
+
+    function loadDefaultCSV() {
+      const status = document.getElementById('statusBanner');
+      status.style.display = 'flex';
+      status.innerHTML = `<span>⏳ '애플 주가.csv' 파일을 읽고 10가지 통계 모델을 실행 중입니다...</span>`;
+
+      fetch('애플 주가.csv')
+        .then(response => {
+          if (!response.ok) throw new Error('파일을 직접 fetch할 수 없습니다.');
+          return response.text();
+        })
+        .then(csvText => {
+          Papa.parse(csvText, {
+            header: true,
+            dynamicTyping: true,
+            skipEmptyLines: true,
+            complete: function(results) {
+              processStockData(results.data, '애플 주가.csv');
+            }
+          });
+        })
+        .catch(err => {
+          console.warn('Fetch fallback:', err);
+          status.innerHTML = `<span>⚠️ 웹 보안 정책으로 직접 로컬 파일 읽기가 제한되었습니다. 상단의 <strong>[📂 다른 CSV 불러오기]</strong> 버튼을 눌러 현재 폴더의 <strong>'애플 주가.csv'</strong>를 선택해 주세요!</span>`;
+        });
+    }
+
+    // Mathematical & Statistical Helper Functions
+    function mean(arr) {
+      return arr.reduce((a, b) => a + b, 0) / arr.length;
+    }
+
+    function stdDev(arr, avg) {
+      const mu = avg !== undefined ? avg : mean(arr);
+      return Math.sqrt(arr.reduce((sq, n) => sq + Math.pow(n - mu, 2), 0) / (arr.length - 1));
+    }
+
+    function skewness(arr, mu, sigma) {
+      const n = arr.length;
+      const m3 = arr.reduce((acc, val) => acc + Math.pow(val - mu, 3), 0) / n;
+      return m3 / Math.pow(sigma, 3);
+    }
+
+    function kurtosis(arr, mu, sigma) {
+      const n = arr.length;
+      const m4 = arr.reduce((acc, val) => acc + Math.pow(val - mu, 4), 0) / n;
+      return (m4 / Math.pow(sigma, 4)) - 3; // excess kurtosis
+    }
+
+    function percentile(sortedArr, p) {
+      const index = (sortedArr.length - 1) * p;
+      const lower = Math.floor(index);
+      const upper = Math.ceil(index);
+      const weight = index - lower;
+      return sortedArr[lower] * (1 - weight) + sortedArr[upper] * weight;
+    }
+
+    function linearRegression(xArr, yArr) {
+      const n = xArr.length;
+      const xMean = mean(xArr);
+      const yMean = mean(yArr);
+      let num = 0;
+      let den = 0;
+      for (let i = 0; i < n; i++) {
+        num += (xArr[i] - xMean) * (yArr[i] - yMean);
+        den += Math.pow(xArr[i] - xMean, 2);
+      }
+      const slope = num / den;
+      const intercept = yMean - slope * xMean;
+      
+      // Correlation coefficient (r)
+      const xStd = stdDev(xArr, xMean);
+      const yStd = stdDev(yArr, yMean);
+      const r = (num / (n - 1)) / (xStd * yStd);
+      return { slope, intercept, r };
+    }
+
+    // Main Processing Pipeline
+    function processStockData(rawData, fileName) {
+      destroyAllCharts();
+
+      // Clean & sort data chronologically
+      const data = rawData
+        .filter(d => d.Date && d.Close != null && !isNaN(d.Close))
+        .sort((a, b) => new Date(a.Date) - new Date(b.Date));
+
+      const n = data.length;
+      if (n === 0) {
+        alert("유효한 데이터가 없습니다.");
+        return;
+      }
+
+      const dates = data.map(d => d.Date);
+      const closes = data.map(d => Number(d.Close));
+      const volumes = data.map(d => Number(d.Volume || 0));
+
+      // 1. Calculate Daily Returns & Log Returns
+      const dailyReturns = [0];
+      const logReturns = [0];
+      for (let i = 1; i < n; i++) {
+        const ret = (closes[i] - closes[i - 1]) / closes[i - 1];
+        dailyReturns.push(ret);
+        logReturns.push(Math.log(closes[i] / closes[i - 1]));
+      }
+
+      // Filtered returns (excluding initial 0)
+      const activeReturns = dailyReturns.slice(1);
+      const retMean = mean(activeReturns);
+      const retStd = stdDev(activeReturns, retMean);
+      const annualVol = retStd * Math.sqrt(252);
+
+      // Total return & CAGR
+      const totalReturn = ((closes[n - 1] - closes[0]) / closes[0]);
+      const years = (new Date(dates[n - 1]) - new Date(dates[0])) / (365.25 * 24 * 3600 * 1000);
+      const cagr = Math.pow(closes[n - 1] / closes[0], 1 / years) - 1;
+      const rf = 0.015; // 1.5% Risk Free Rate assumption
+      const sharpe = (cagr - rf) / annualVol;
+
+      // 2. Drawdown & Max Drawdown
+      let peak = closes[0];
+      let maxDD = 0;
+      const drawdowns = [];
+      for (let i = 0; i < n; i++) {
+        if (closes[i] > peak) peak = closes[i];
+        const dd = (closes[i] - peak) / peak;
+        drawdowns.push(dd);
+        if (dd < maxDD) maxDD = dd;
+      }
+
+      // Update KPI
+      document.getElementById('kpiDateRange').innerText = `${dates[0]} ~ ${dates[n - 1]}`;
+      document.getElementById('kpiTotalDays').innerText = `${n.toLocaleString()} 거래일 분석`;
+      document.getElementById('kpiFinalPrice').innerText = `$${closes[n - 1].toFixed(2)}`;
+      document.getElementById('kpiTotalReturn').innerText = `총 수익률: +${(totalReturn * 100).toFixed(1)}%`;
+      document.getElementById('kpiVolatility').innerText = `${(annualVol * 100).toFixed(2)}%`;
+      document.getElementById('kpiSharpe').innerText = sharpe.toFixed(2);
+      document.getElementById('kpiCAGR').innerText = `CAGR(연복리): +${(cagr * 100).toFixed(2)}%`;
+      document.getElementById('kpiMDD').innerText = `${(maxDD * 100).toFixed(2)}%`;
+
+      document.getElementById('statusBanner').innerHTML = `<span>✅ <strong>${fileName}</strong> 로드 완료: 총 ${n.toLocaleString()}개 거래일 데이터의 10대 통계 분석 지표가 성공적으로 렌더링되었습니다.</span>`;
+
+      // Sampling for heavy charts to maintain ultra-fast rendering (every 2-4 days if > 1500)
+      const step = n > 1500 ? 3 : 1;
+      const sampledDates = dates.filter((_, idx) => idx % step === 0);
+
+      // ==========================================
+      // ANALYSIS 1: Moving Averages (20, 60, 200)
+      // ==========================================
+      function getSMA(period) {
+        const sma = [];
+        let sum = 0;
+        for (let i = 0; i < n; i++) {
+          sum += closes[i];
+          if (i >= period) sum -= closes[i - period];
+          sma.push(i >= period - 1 ? sum / period : null);
+        }
+        return sma;
+      }
+      const sma20 = getSMA(20);
+      const sma60 = getSMA(60);
+      const sma200 = getSMA(200);
+
+      charts.chartMA = new Chart(document.getElementById('chartMA'), {
+        type: 'line',
+        data: {
+          labels: sampledDates,
+          datasets: [
+            { label: '종가 (Close)', data: closes.filter((_, i) => i % step === 0), borderColor: '#f8fafc', borderWidth: 1.5, pointRadius: 0 },
+            { label: 'SMA 20 (단기)', data: sma20.filter((_, i) => i % step === 0), borderColor: '#38bdf8', borderWidth: 1.2, pointRadius: 0 },
+            { label: 'SMA 60 (중기)', data: sma60.filter((_, i) => i % step === 0), borderColor: '#f59e0b', borderWidth: 1.2, pointRadius: 0 },
+            { label: 'SMA 200 (장기)', data: sma200.filter((_, i) => i % step === 0), borderColor: '#f43f5e', borderWidth: 1.2, pointRadius: 0 }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: { legend: { position: 'top', labels: { boxWidth: 12 } } },
+          scales: { x: { grid: { display: false } }, y: { title: { display: true, text: 'USD ($)' } } }
+        }
+      });
+
+      // ==========================================
+      // ANALYSIS 2: Return Distribution Histogram + Normality
+      // ==========================================
+      const binsCount = 35;
+      const minRet = Math.min(...activeReturns);
+      const maxRet = Math.max(...activeReturns);
+      const binWidth = (maxRet - minRet) / binsCount;
+      const histBins = new Array(binsCount).fill(0);
+      const binLabels = [];
+
+      for (let i = 0; i < binsCount; i++) {
+        const binStart = minRet + i * binWidth;
+        binLabels.push((binStart * 100).toFixed(1) + '%');
+      }
+
+      activeReturns.forEach(r => {
+        let bIdx = Math.floor((r - minRet) / binWidth);
+        if (bIdx >= binsCount) bIdx = binsCount - 1;
+        histBins[bIdx]++;
+      });
+
+      // Normal Distribution Curve Overlay
+      const normalCurve = binLabels.map((_, i) => {
+        const x = minRet + (i + 0.5) * binWidth;
+        const norm = (1 / (retStd * Math.sqrt(2 * Math.PI))) * Math.exp(-0.5 * Math.pow((x - retMean) / retStd, 2));
+        return norm * activeReturns.length * binWidth;
+      });
+
+      charts.chartHist = new Chart(document.getElementById('chartHist'), {
+        type: 'bar',
+        data: {
+          labels: binLabels,
+          datasets: [
+            {
+              type: 'bar',
+              label: '일일 수익률 빈도 (도수)',
+              data: histBins,
+              backgroundColor: 'rgba(56, 189, 248, 0.45)',
+              borderColor: '#38bdf8',
+              borderWidth: 1
+            },
+            {
+              type: 'line',
+              label: '이론적 정규분포 곡선',
+              data: normalCurve,
+              borderColor: '#f43f5e',
+              borderWidth: 2,
+              fill: false,
+              pointRadius: 0
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: 'top', labels: { boxWidth: 12 } } },
+          scales: {
+            x: { ticks: { maxTicksLimit: 12 } },
+            y: { title: { display: true, text: '빈도수(거래일)' } }
+          }
+        }
+      });
+
+      // ==========================================
+      // ANALYSIS 3: Bollinger Bands (20-day ± 2σ)
+      // ==========================================
+      const bbUpper = [];
+      const bbLower = [];
+      for (let i = 0; i < n; i++) {
+        if (i < 19) {
+          bbUpper.push(null);
+          bbLower.push(null);
+        } else {
+          const slice = closes.slice(i - 19, i + 1);
+          const m = sma20[i];
+          const s = stdDev(slice, m);
+          bbUpper.push(m + 2 * s);
+          bbLower.push(m - 2 * s);
+        }
+      }
+
+      charts.chartBB = new Chart(document.getElementById('chartBB'), {
+        type: 'line',
+        data: {
+          labels: sampledDates,
+          datasets: [
+            { label: '상단 밴드 (+2σ)', data: bbUpper.filter((_, i) => i % step === 0), borderColor: 'rgba(168, 85, 247, 0.6)', borderWidth: 1, pointRadius: 0 },
+            { label: '중심선 (SMA20)', data: sma20.filter((_, i) => i % step === 0), borderColor: '#38bdf8', borderWidth: 1.2, pointRadius: 0 },
+            { label: '하단 밴드 (-2σ)', data: bbLower.filter((_, i) => i % step === 0), borderColor: 'rgba(168, 85, 247, 0.6)', borderWidth: 1, pointRadius: 0, fill: '-2', backgroundColor: 'rgba(168, 85, 247, 0.08)' },
+            { label: '종가', data: closes.filter((_, i) => i % step === 0), borderColor: '#f8fafc', borderWidth: 1.5, pointRadius: 0 }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: 'top', labels: { boxWidth: 12 } } },
+          scales: { x: { grid: { display: false } }, y: { title: { display: true, text: 'USD ($)' } } }
+        }
+      });
+
+      // ==========================================
+      // ANALYSIS 4: 30-day Rolling Annual Volatility
+      // ==========================================
+      const rollingVol = [];
+      for (let i = 0; i < n; i++) {
+        if (i < 30) {
+          rollingVol.push(null);
+        } else {
+          const retWindow = activeReturns.slice(i - 30, i);
+          const s = stdDev(retWindow);
+          rollingVol.push((s * Math.sqrt(252) * 100));
+        }
+      }
+
+      charts.chartRollingVol = new Chart(document.getElementById('chartRollingVol'), {
+        type: 'line',
+        data: {
+          labels: sampledDates,
+          datasets: [{
+            label: '30일 롤링 연환산 변동성 (%)',
+            data: rollingVol.filter((_, i) => i % step === 0),
+            borderColor: '#f59e0b',
+            backgroundColor: 'rgba(245, 158, 11, 0.1)',
+            fill: true,
+            borderWidth: 1.5,
+            pointRadius: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: 'top' } },
+          scales: { y: { title: { display: true, text: '연환산 변동성 (%)' } } }
+        }
+      });
+
+      // ==========================================
+      // ANALYSIS 5: RSI (14 Days)
+      // ==========================================
+      const rsiValues = [];
+      let gains = 0;
+      let losses = 0;
+
+      for (let i = 1; i <= 14; i++) {
+        const diff = closes[i] - closes[i - 1];
+        if (diff >= 0) gains += diff;
+        else losses -= diff;
+      }
+      let avgGain = gains / 14;
+      let avgLoss = losses / 14;
+
+      for (let i = 0; i < n; i++) {
+        if (i < 14) {
+          rsiValues.push(null);
+        } else if (i === 14) {
+          const rs = avgGain / (avgLoss || 1e-9);
+          rsiValues.push(100 - (100 / (1 + rs)));
+        } else {
+          const diff = closes[i] - closes[i - 1];
+          const currGain = diff > 0 ? diff : 0;
+          const currLoss = diff < 0 ? -diff : 0;
+          avgGain = (avgGain * 13 + currGain) / 14;
+          avgLoss = (avgLoss * 13 + currLoss) / 14;
+          const rs = avgGain / (avgLoss || 1e-9);
+          rsiValues.push(100 - (100 / (1 + rs)));
+        }
+      }
+
+      charts.chartRSI = new Chart(document.getElementById('chartRSI'), {
+        type: 'line',
+        data: {
+          labels: sampledDates,
+          datasets: [
+            { label: 'RSI(14)', data: rsiValues.filter((_, i) => i % step === 0), borderColor: '#a855f7', borderWidth: 1.5, pointRadius: 0 }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'top' },
+            annotation: {}
+          },
+          scales: {
+            y: { min: 0, max: 100, ticks: { stepSize: 20 } }
+          }
+        }
+      });
+
+      // ==========================================
+      // ANALYSIS 6: Drawdown & Underwater Analysis
+      // ==========================================
+      const pctDrawdowns = drawdowns.map(d => d * 100);
+      charts.chartDrawdown = new Chart(document.getElementById('chartDrawdown'), {
+        type: 'line',
+        data: {
+          labels: sampledDates,
+          datasets: [{
+            label: '고점 대비 낙폭 (Drawdown %)',
+            data: pctDrawdowns.filter((_, i) => i % step === 0),
+            borderColor: '#f43f5e',
+            backgroundColor: 'rgba(244, 63, 94, 0.2)',
+            fill: true,
+            borderWidth: 1.2,
+            pointRadius: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: 'top' } },
+          scales: { y: { title: { display: true, text: '하락률 (%)' } } }
+        }
+      });
+
+      // ==========================================
+      // ANALYSIS 7: Volume vs Return Regression (OLS)
+      // ==========================================
+      // Volume in Millions vs Daily Return (%)
+      const regStep = Math.max(1, Math.floor(n / 600)); // ~600 sample points
+      const scatterPoints = [];
+      const regX = [];
+      const regY = [];
+
+      for (let i = 1; i < n; i += regStep) {
+        const vM = volumes[i] / 1e6;
+        const rPct = dailyReturns[i] * 100;
+        scatterPoints.push({ x: vM, y: rPct });
+        regX.push(vM);
+        regY.push(rPct);
+      }
+
+      const reg = linearRegression(regX, regY);
+      const minX = Math.min(...regX);
+      const maxX = Math.max(...regX);
+      const regLinePoints = [
+        { x: minX, y: reg.slope * minX + reg.intercept },
+        { x: maxX, y: reg.slope * maxX + reg.intercept }
+      ];
+
+      charts.chartRegression = new Chart(document.getElementById('chartRegression'), {
+        type: 'scatter',
+        data: {
+          datasets: [
+            {
+              label: `거래 데이터 (피어슨 r = ${reg.r.toFixed(3)})`,
+              data: scatterPoints,
+              backgroundColor: 'rgba(56, 189, 248, 0.45)',
+              pointRadius: 2
+            },
+            {
+              type: 'line',
+              label: `OLS 회귀선 (y = ${reg.slope.toFixed(4)}x + ${reg.intercept.toFixed(2)})`,
+              data: regLinePoints,
+              borderColor: '#f43f5e',
+              borderWidth: 2,
+              fill: false,
+              pointRadius: 0
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: 'top' } },
+          scales: {
+            x: { title: { display: true, text: '거래량 (Volume, 백만 주)' } },
+            y: { title: { display: true, text: '일일 수익률 (%)' } }
+          }
+        }
+      });
+
+      // ==========================================
+      // ANALYSIS 8: Yearly Boxplot (Min, Q1, Median, Q3, Max)
+      // ==========================================
+      const yearGroups = {};
+      data.forEach(d => {
+        const yr = d.Date.split('-')[0];
+        if (!yearGroups[yr]) yearGroups[yr] = [];
+        yearGroups[yr].push(d.Close);
+      });
+
+      const yearsList = Object.keys(yearGroups).sort();
+      const q1Data = [];
+      const medianData = [];
+      const q3Data = [];
+      const minData = [];
+      const maxData = [];
+
+      yearsList.forEach(yr => {
+        const sorted = [...yearGroups[yr]].sort((a, b) => a - b);
+        minData.push(sorted[0]);
+        q1Data.push(percentile(sorted, 0.25));
+        medianData.push(percentile(sorted, 0.5));
+        q3Data.push(percentile(sorted, 0.75));
+        maxData.push(sorted[sorted.length - 1]);
+      });
+
+      charts.chartBoxplot = new Chart(document.getElementById('chartBoxplot'), {
+        type: 'line',
+        data: {
+          labels: yearsList,
+          datasets: [
+            { label: '연간 최고가 (Max)', data: maxData, borderColor: '#10b981', borderDash: [4, 4], pointRadius: 3 },
+            { label: '제3사분위 (Q3 75%)', data: q3Data, borderColor: '#38bdf8', fill: '+1', backgroundColor: 'rgba(56, 189, 248, 0.15)' },
+            { label: '중앙값 (Median)', data: medianData, borderColor: '#f8fafc', borderWidth: 2, pointRadius: 4 },
+            { label: '제1사분위 (Q1 25%)', data: q1Data, borderColor: '#38bdf8', fill: false },
+            { label: '연간 최저가 (Min)', data: minData, borderColor: '#f43f5e', borderDash: [4, 4], pointRadius: 3 }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: 'top', labels: { boxWidth: 10 } } },
+          scales: { y: { title: { display: true, text: 'USD ($)' } } }
+        }
+      });
+
+      // ==========================================
+      // ANALYSIS 9: Monthly Seasonality Analysis
+      // ==========================================
+      const monthBuckets = Array.from({ length: 12 }, () => []);
+      for (let i = 1; i < n; i++) {
+        const mIdx = new Date(dates[i]).getMonth(); // 0 ~ 11
+        monthBuckets[mIdx].push(dailyReturns[i]);
+      }
+
+      const monthNames = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
+      const monthlyMeanReturns = monthBuckets.map(b => (mean(b) * 21 * 100)); // approx 21 trading days per month
+      const monthlyWinRate = monthBuckets.map(b => {
+        const wins = b.filter(r => r > 0).length;
+        return ((wins / b.length) * 100);
+      });
+
+      charts.chartSeasonality = new Chart(document.getElementById('chartSeasonality'), {
+        type: 'bar',
+        data: {
+          labels: monthNames,
+          datasets: [
+            {
+              type: 'bar',
+              label: '월 환산 평균 수익률 (%)',
+              data: monthlyMeanReturns,
+              backgroundColor: monthlyMeanReturns.map(v => v >= 0 ? 'rgba(16, 185, 129, 0.6)' : 'rgba(244, 63, 94, 0.6)'),
+              borderColor: monthlyMeanReturns.map(v => v >= 0 ? '#10b981' : '#f43f5e'),
+              borderWidth: 1,
+              yAxisID: 'y'
+            },
+            {
+              type: 'line',
+              label: '상승일 승률 (Win Rate %)',
+              data: monthlyWinRate,
+              borderColor: '#f59e0b',
+              borderWidth: 2,
+              pointRadius: 3,
+              yAxisID: 'y1'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: 'top' } },
+          scales: {
+            y: { title: { display: true, text: '월평균 수익률 (%)' } },
+            y1: { position: 'right', min: 40, max: 65, title: { display: true, text: '승률 (%)' }, grid: { drawOnChartArea: false } }
+          }
+        }
+      });
+
+      // ==========================================
+      // ANALYSIS 10: Quantitative Risk & Statistics Summary Table
+      // ==========================================
+      const sortedRet = [...activeReturns].sort((a, b) => a - b);
+      const var95 = percentile(sortedRet, 0.05);
+      const var99 = percentile(sortedRet, 0.01);
+
+      // CVaR (Conditional VaR / Expected Shortfall)
+      const worst5Pct = sortedRet.filter(r => r <= var95);
+      const cvar95 = mean(worst5Pct);
+
+      const skewVal = skewness(activeReturns, retMean, retStd);
+      const kurtVal = kurtosis(activeReturns, retMean, retStd);
+
+      // Downside Deviation & Sortino Ratio
+      const downsideDiffs = activeReturns.filter(r => r < 0);
+      const downsideDeviation = Math.sqrt(downsideDiffs.reduce((acc, r) => acc + Math.pow(r, 2), 0) / activeReturns.length) * Math.sqrt(252);
+      const sortino = (cagr - rf) / downsideDeviation;
+
+      const summaryStats = [
+        { name: "총 표본 거래일수 (Sample Size, N)", val: `${n.toLocaleString()} 일`, desc: "분석 대상 유효 거래일 총합" },
+        { name: "일평균 수익률 (Mean Daily Return)", val: `${(retMean * 100).toFixed(3)}%`, desc: "일일 기대 수익률 산술평균" },
+        { name: "연평균 복리수익률 (CAGR)", val: `+${(cagr * 100).toFixed(2)}%`, desc: "10개년 기하평균 복리 성장률" },
+        { name: "연환산 표준편차 (Annual Volatility)", val: `${(annualVol * 100).toFixed(2)}%`, desc: "일간 변동성의 연환산 위험도" },
+        { name: "샤프 지수 (Sharpe Ratio, Rf=1.5%)", val: sharpe.toFixed(2), desc: "총 위험 대비 초과 수익률 비율" },
+        { name: "소르티노 지수 (Sortino Ratio)", val: sortino.toFixed(2), desc: "하방 위험(Downside Risk)만을 고려한 성과 지수" },
+        { name: "역사적 95% 1일 VaR (Value at Risk)", val: `${(var95 * 100).toFixed(2)}%`, desc: "95% 신뢰수준에서 하루 동안 발생 가능한 최대 손실" },
+        { name: "역사적 95% CVaR (Expected Shortfall)", val: `${(cvar95 * 100).toFixed(2)}%`, desc: "VaR 초과 손실 발생 시의 평균 손실률" },
+        { name: "최대 낙폭 (Max Drawdown, MDD)", val: `${(maxDD * 100).toFixed(2)}%`, desc: "역대 최고점 대비 발생한 최대 손실폭" },
+        { name: "수익률 왜도 (Skewness)", val: skewVal.toFixed(3), desc: skewVal < 0 ? "좌측 꼬리 비대칭 (하락 급변동 빈도 높음)" : "우측 꼬리 비대칭" },
+        { name: "초과 첨도 (Excess Kurtosis)", val: kurtVal.toFixed(3), desc: kurtVal > 0 ? "두꺼운 꼬리(Fat Tail) - 정규분포보다 극단값 발생 빈번" : "얇은 꼬리" },
+        { name: "거래량-수익률 피어슨 상관계수 (r)", val: reg.r.toFixed(3), desc: "거래량 증감과 일일 수익률 변동 간의 선형 상관성" }
+      ];
+
+      const tbody = document.querySelector('#statSummaryTable tbody');
+      tbody.innerHTML = '';
+      summaryStats.forEach(s => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td style="font-weight: 600; color: #f8fafc;">${s.name}</td>
+          <td style="color: var(--accent); font-weight: 700; font-family: monospace; font-size: 0.95rem;">${s.val}</td>
+          <td style="color: var(--text-muted);">${s.desc}</td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+  </script>
+</body>
+</html>
